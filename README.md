@@ -30,12 +30,14 @@ When two Hamilton instruments run similar methods and produce inconsistent resul
 
 ## Prerequisites
 
+Hamilton Venus runs on Windows, but the analyst or consultant performing the comparison may be working on any platform. This tool supports both.
+
 ### Mac
 - Python 3 (included on modern macOS)
 - mdbtools -- install via Homebrew:
-  ```bash
+```bash
   brew install mdbtools
-  ```
+```
 
 ### Windows
 Windows support via `pyodbc` is planned. See the Windows section below.
@@ -53,7 +55,6 @@ C:\Program Files (x86)\HAMILTON\Config\ML_STARLiquids.mdb
 For a cross-audit, copy this file from both instruments and place them in separate named folders so you can tell them apart (e.g. `Site_A/ML_STARLiquids.mdb` and `Site_B/ML_STARLiquids.mdb`).
 
 ### 2. Run the launcher
-
 ```bash
 python3 launch.py
 ```
@@ -77,9 +78,9 @@ Two test databases are included -- `Site_A_Master.db` and `Site_B_STARlet.db`. T
 - `AsFlowRate` modified for all Water liquid classes
 - `PressureLLDSensitivity` modified for Ethanol classes
 
-Load them directly into the HTML tool (no conversion needed -- they are already SQLite) to verify the audit logic is working correctly. You should see those classes flagged as PARAM DIFF in Cross-Audit mode.
+Load them directly into the HTML tool via the file pickers in the UI to verify the audit logic is working correctly. You should see those classes flagged as PARAM DIFF in Cross-Audit mode.
 
-To regenerate the test databases from a source `.mdb` file:
+To regenerate the test databases from a source `.db` file:
 ```bash
 python3 generate_test_dbs.py
 ```
@@ -98,17 +99,9 @@ python3 generate_test_dbs.py
 
 ---
 
-## Using the Tool Without the Launcher
-
-If you already have `.db` (SQLite) files and don't need conversion, you can open `hamilton_lc_v2.html` directly via any local web server (e.g. VS Code Live Server) and load files manually using the file picker in the UI.
-
-The launcher is required when starting from `.mdb` files since browsers cannot read the Access database format directly.
-
----
-
 ## Windows
 
-The Windows path for this tool is planned but not yet implemented. The intended approach is:
+The Windows path for this tool is planned but not yet implemented. Hamilton Venus always runs on Windows, but the person performing the liquid class analysis may be on Mac or Windows regardless. The intended approach for a Windows-native workflow is:
 
 - A Python script using `pyodbc` and the Microsoft Access ODBC driver to convert `.mdb` to SQLite
 - The same `hamilton_lc_v2.html` tool works identically once the conversion is done
@@ -120,7 +113,7 @@ Contributions welcome.
 
 ## Notes and Limitations
 
-- The tool loads the entire `LiquidClass` table. On a typical Hamilton system this is 400-500 classes and performs well in the browser.
+- The tool loads the entire `LiquidClass` table. Performance scales with the number of liquid classes in the database -- heavily customized sites with large custom LC libraries may have significantly more than a default installation.
 - Liquid class parameter comparison normalizes numeric values before comparing, so `500`, `"500"`, and `500.0` are treated as equal.
 - The `.mdb` to `.db` conversion uses `mdb-export` (mdbtools) with `latin-1` decoding to correctly handle special characters such as the µ symbol in parameter labels.
 - TADM tolerance band data (`TadmToleranceBand` table) is not currently included in the comparison. This is a potential future addition.
