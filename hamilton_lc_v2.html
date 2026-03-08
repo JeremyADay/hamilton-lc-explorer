@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hamilton LC Tool V2</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:       #0d1117;
+            --surface:  #161b22;
+            --surface2: #1e2530;
+            --border:   #2a3347;
+            --accent:   #2f81f7;
+            --asp:      #22d3ee;
+            --disp:     #f472b6;
+            --meta:     #a3e635;
+            --text:     #cdd9e5;
+            --muted:    #576680;
+            --diff:     #f85149;
+            --diffbg:   rgba(248,81,73,0.15);
+            --match:    rgba(163,230,53,0.07);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'IBM Plex Sans', sans-serif;
+            background: var(--bg); color: var(--text);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* ── LANDING / MODE SELECT ── */
+        #landing {
+            flex: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 32px;
+        }
+        .landing-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px; font-weight: 600; letter-spacing: 0.15em;
+            color: var(--muted); text-transform: uppercase;
+        }
+        .landing-title span { color: var(--accent); }
+        .mode-cards { display: flex; gap: 20px; }
+        .mode-card {
+            width: 220px; padding: 28px 24px;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 10px; cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, transform 0.15s;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        .mode-card:hover {
+            border-color: var(--accent);
+            background: var(--surface2);
+            transform: translateY(-2px);
+        }
+        .mode-icon { font-size: 28px; }
+        .mode-label {
+            font-weight: 700; font-size: 14px; color: var(--text);
+        }
+        .mode-desc {
+            font-size: 11px; color: var(--muted); line-height: 1.6;
+        }
+        .mode-action {
+            margin-top: 4px; font-size: 11px; font-weight: 600;
+            color: var(--accent);
+        }
+
+        /* ── APP SHELL (hidden until mode chosen) ── */
+        #app { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 8px 14px;
+            background: var(--surface); border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .logo {
+            font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+            font-weight: 600; color: var(--accent); letter-spacing: 0.06em;
+            white-space: nowrap; cursor: pointer;
+        }
+        .logo:hover { color: var(--text); }
+        .logo-sub { color: var(--muted); font-weight: 400; }
+
+        .db-slots { display: flex; gap: 8px; flex: 1; }
+        .db-slot {
+            flex: 1; display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px; border-radius: 6px;
+            border: 1.5px dashed var(--border); cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            position: relative; overflow: hidden; min-width: 0;
+        }
+        .db-slot:hover, .db-slot.drag-over {
+            border-color: var(--accent); background: rgba(47,129,247,0.06);
+        }
+        .db-slot.loaded { border-style: solid; }
+        .db-slot.sys1.loaded { border-color: var(--accent); background: rgba(47,129,247,0.05); }
+        .db-slot.sys2.loaded { border-color: var(--asp); background: rgba(34,211,238,0.05); }
+        .db-slot input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+        .slot-icon { font-size: 14px; flex-shrink: 0; }
+        .slot-info { min-width: 0; }
+        .slot-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+        .slot-name { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .slot-count { font-size: 10px; color: var(--muted); }
+
+        .btn {
+            padding: 6px 14px; border-radius: 5px; border: none;
+            font-family: 'IBM Plex Sans', sans-serif; font-weight: 600;
+            font-size: 11px; cursor: pointer; white-space: nowrap;
+            transition: opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-back { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+        .btn-audit { background: var(--diff); color: white; display: none; }
+        .btn-audit.show { display: block; }
+        .btn-audit.active { background: #6366f1; }
+        .btn-export { background: #059669; color: white; display: none; }
+        .btn-export.show { display: block; }
+        .btn-print  { background: #7c3aed; color: white; display: none; }
+        .btn-print.show  { display: block; }
+
+        /* Print styles */
+        @media print {
+            .topbar, .toolbar, #topScroll, .statusbar { display: none !important; }
+            body { background: white !important; color: #1e293b !important; height: auto !important; overflow: visible !important; }
+            .table-wrap { overflow: visible !important; height: auto !important; }
+            table { width: 100% !important; }
+            #print-header { display: block !important; }
+            th { background: #1e293b !important; color: white !important; position: static !important; }
+            .ph-asp  { background: #0e7490 !important; }
+            .ph-disp { background: #9d174d !important; }
+            .ph-meta { background: #3f6212 !important; }
+            .ph-name { background: #334155 !important; }
+            .sticky  { position: static !important; }
+            td.name-cell { background: #f8fafc !important; color: #1e40af !important; }
+            td.mismatch  { background: #fee2e2 !important; color: #dc2626 !important; }
+            .badge-diff  { background: #fee2e2 !important; color: #dc2626 !important; border-color: #fca5a5 !important; }
+            .badge-sys1  { background: #fef3c7 !important; color: #d97706 !important; border-color: #fcd34d !important; }
+            .badge-sys2  { background: #e0f2fe !important; color: #0369a1 !important; border-color: #7dd3fc !important; }
+            .badge-match { background: #f1f5f9 !important; color: #64748b !important; border-color: #cbd5e1 !important; }
+            td { color: #334155 !important; border-color: #e2e8f0 !important; }
+            td.absent { color: #94a3b8 !important; }
+            td.sys2-val { color: #64748b !important; }
+        }
+        #print-header { display: none; }
+
+        /* ── TOOLBAR ── */
+        .toolbar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 14px; background: var(--surface);
+            border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
+        }
+        .search {
+            flex: 1; min-width: 180px; padding: 6px 11px;
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 5px; color: var(--text);
+            font-family: 'IBM Plex Mono', monospace; font-size: 12px; outline: none;
+            transition: border-color 0.2s;
+        }
+        .search:focus { border-color: var(--accent); }
+        .search::placeholder { color: var(--muted); }
+        .section-label { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+        .divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+        .chip-group { display: flex; gap: 4px; }
+        .chip {
+            padding: 3px 9px; border-radius: 3px; font-size: 10px;
+            font-weight: 600; cursor: pointer; border: 1px solid transparent;
+            transition: all 0.15s; white-space: nowrap;
+        }
+        .chip.asp  { background: rgba(34,211,238,0.1); color: var(--asp); border-color: rgba(34,211,238,0.2); }
+        .chip.disp { background: rgba(244,114,182,0.1); color: var(--disp); border-color: rgba(244,114,182,0.2); }
+        .chip.meta { background: rgba(163,230,53,0.1); color: var(--meta); border-color: rgba(163,230,53,0.2); }
+        .chip.off  { background: transparent !important; color: var(--muted) !important; border-color: var(--border) !important; }
+
+        /* ── SCROLL MIRROR ── */
+        #topScroll { overflow-x: auto; overflow-y: hidden; height: 8px; flex-shrink: 0; background: var(--surface2); }
+        #topScrollContent { height: 1px; }
+
+        /* ── TABLE ── */
+        .table-wrap { flex: 1; overflow: auto; }
+        table { border-collapse: separate; border-spacing: 0; width: max-content; }
+
+        /* Phase header */
+        .ph-row th {
+            position: sticky; top: 0; z-index: 30;
+            padding: 4px 10px; font-size: 9px; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-right: 1px solid rgba(255,255,255,0.05);
+        }
+        .ph-name  { background: #111620 !important; color: var(--muted) !important; }
+        .ph-asp   { background: rgba(34,211,238,0.13) !important; color: var(--asp) !important; }
+        .ph-disp  { background: rgba(244,114,182,0.13) !important; color: var(--disp) !important; }
+        .ph-meta  { background: rgba(163,230,53,0.10) !important; color: var(--meta) !important; }
+        /* Audit mode: sys1 / sys2 paired headers */
+        .ph-sys1  { background: rgba(47,129,247,0.18) !important; color: #60a5fa !important; }
+        .ph-sys2  { background: rgba(34,211,238,0.13) !important; color: var(--asp) !important; }
+
+        /* Column header */
+        .ch-row th {
+            position: sticky; top: 26px; z-index: 25;
+            padding: 5px 8px; font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px; font-weight: 600; color: var(--muted);
+            text-transform: uppercase; letter-spacing: 0.05em;
+            text-align: center; white-space: nowrap;
+            background: var(--surface2); border-bottom: 2px solid var(--border);
+            border-right: 1px solid var(--border);
+            cursor: pointer; user-select: none; transition: color 0.15s;
+        }
+        .ch-row th:hover { color: var(--text); }
+        .ch-row th.sorted { color: var(--accent); }
+
+        /* Sticky name col */
+        .sticky { position: sticky; left: 0; z-index: 20; border-right: 2px solid var(--border) !important; }
+        th.sticky { z-index: 42 !important; background: var(--surface2) !important; }
+        .ph-row th.sticky { z-index: 44 !important; background: #111620 !important; }
+
+        td {
+            padding: 4px 10px; font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px; text-align: center; white-space: nowrap;
+            border-bottom: 1px solid rgba(42,51,71,0.7);
+            border-right: 1px solid rgba(42,51,71,0.5);
+            color: var(--text);
+        }
+        td.name-cell {
+            text-align: left; font-weight: 600; font-size: 11px;
+            color: #93c5fd; background: var(--surface);
+            padding-left: 12px; padding-right: 20px; min-width: 240px;
+        }
+        tr:hover td { background: rgba(47,129,247,0.04) !important; }
+        tr:hover td.name-cell { background: rgba(47,129,247,0.09) !important; }
+
+        /* Audit diff highlight */
+        td.mismatch {
+            background: var(--diffbg) !important;
+            color: var(--diff) !important; font-weight: 700;
+            outline: 1px solid rgba(248,81,73,0.35);
+            outline-offset: -1px;
+        }
+        td.sys2-val { color: #94a3b8; }
+        td.absent   { color: var(--muted) !important; background: rgba(255,255,255,0.02) !important; }
+        /* Status badge */
+        .status-badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: 0.08em; white-space: nowrap; }
+        .badge-diff  { background: rgba(248,81,73,0.15);  color: #f85149; border: 1px solid rgba(248,81,73,0.3); }
+        .badge-sys1  { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+        .badge-sys2  { background: rgba(34,211,238,0.12); color: #22d3ee; border: 1px solid rgba(34,211,238,0.3); }
+        .badge-match { background: rgba(100,116,139,0.1); color: #475569;  border: 1px solid rgba(100,116,139,0.2); }
+        td.status-cell { text-align: center !important; min-width: 90px; }
+
+        /* ── STATUS BAR ── */
+        .statusbar {
+            display: flex; gap: 16px; align-items: center;
+            padding: 4px 14px; background: var(--surface);
+            border-top: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted);
+            flex-shrink: 0;
+        }
+        .statusbar strong { color: var(--text); }
+        .ro-badge { color: #34d399; margin-left: auto; }
+
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: var(--surface2); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    </style>
+</head>
+<body>
+
+<!-- ── LANDING ── -->
+<div id="landing">
+    <div class="landing-title">Hamilton <span>LC</span> Tool &nbsp;·&nbsp; V2.0</div>
+    <div class="mode-cards">
+        <div class="mode-card" onclick="startMode('explore')">
+            <div class="mode-icon">🔬</div>
+            <div class="mode-label">Explorer</div>
+            <div class="mode-desc">Browse and search all liquid classes in a single database. Search by name, sort any column, toggle parameter groups.</div>
+            <div class="mode-action">Load one .db file →</div>
+        </div>
+        <div class="mode-card" onclick="startMode('audit')">
+            <div class="mode-icon">⚖️</div>
+            <div class="mode-label">Cross-Audit</div>
+            <div class="mode-desc">Compare two instrument databases side by side. Find liquid classes with matching names but different parameter settings.</div>
+            <div class="mode-action">Load two .db files →</div>
+        </div>
+    </div>
+    <div style="font-size:11px; color:var(--muted); text-align:center; line-height:1.8;">
+        Accepts SQLite <code style="color:var(--accent)">.db</code> files &nbsp;·&nbsp;
+        All operations are <strong style="color:#34d399">read-only</strong> &nbsp;·&nbsp;
+        No data is modified or transmitted
+    </div>
+</div>
+
+<!-- ── APP ── -->
+<!-- Print header (only visible when printing) -->
+<div id="print-header">
+    <div id="ph-title" style="font-size:18px; font-weight:700; color:#1e293b; margin-bottom:4px;"></div>
+    <div id="ph-sub"   style="font-size:12px; color:#64748b; margin-bottom:16px;"></div>
+</div>
+<div id="app">
+
+    <!-- TOP BAR -->
+    <div class="topbar">
+        <div class="logo" onclick="goHome()" title="Back to home">LC<span class="logo-sub">/</span>TOOL <span class="logo-sub">V2</span></div>
+
+        <div class="db-slots" id="dbSlots">
+            <!-- populated by startMode() -->
+        </div>
+
+        <button class="btn btn-back" onclick="goHome()">← Home</button>
+        <button class="btn btn-audit" id="auditBtn" onclick="toggleAuditFocus()">MISMATCHES ONLY</button>
+        <button class="btn btn-export" id="exportBtn" onclick="exportXLSX()">⬇ EXPORT EXCEL</button>
+        <button class="btn btn-print"  id="printBtn"  onclick="printReport()">🖨 PRINT REPORT</button>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="toolbar">
+        <input type="text" class="search" id="search" placeholder="Filter liquid class names..." oninput="render()">
+        <div class="divider"></div>
+        <div class="section-label">Show:</div>
+        <div class="chip-group" id="chips"></div>
+    </div>
+
+    <!-- TOP SCROLL -->
+    <div id="topScroll"><div id="topScrollContent"></div></div>
+
+    <!-- TABLE -->
+    <div class="table-wrap" id="tableWrap">
+        <table id="mainTable">
+            <thead id="thead"></thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="statusbar">
+        <span id="sb_rows"></span>
+        <span id="sb_mode"></span>
+        <span id="sb_mismatches"></span>
+        <span class="ro-badge">● READ-ONLY</span>
+    </div>
+
+</div>
+
+<script>
+// ── COLUMN SCHEMA ────────────────────────────────────────────────────────────
+const COLS = [
+    { id:'LiquidClassName',         label:'Class Name',     phase:'name', type:'name' },
+    { id:'LiquidName',              label:'Liquid',         phase:'meta', type:'text' },
+    { id:'DispenseMode',            label:'Mode',           phase:'meta', type:'int'  },
+    { id:'TipType',                 label:'Tip',            phase:'meta', type:'int'  },
+    { id:'PressureLLDSensitivity',  label:'LLD Sens',       phase:'meta', type:'num'  },
+    { id:'AsFlowRate',              label:'Flow ul/s',      phase:'asp',  type:'num'  },
+    { id:'AsMixFlowRate',           label:'Mix ul/s',       phase:'asp',  type:'num'  },
+    { id:'AsAirTransportVolume',    label:'Air Trans ul',   phase:'asp',  type:'num'  },
+    { id:'AsBlowOutVolume',         label:'Blowout ul',     phase:'asp',  type:'num'  },
+    { id:'AsSettlingTime',          label:'Settle s',       phase:'asp',  type:'num'  },
+    { id:'AsSwapSpeed',             label:'Swap mm/s',      phase:'asp',  type:'num'  },
+    { id:'AsOverAspirateVolume',    label:'Over-Asp ul',    phase:'asp',  type:'num'  },
+    { id:'DsFlowRate',              label:'Flow ul/s',      phase:'disp', type:'num'  },
+    { id:'DsMixFlowRate',           label:'Mix ul/s',       phase:'disp', type:'num'  },
+    { id:'DsAirTransportVolume',    label:'Air Trans ul',   phase:'disp', type:'num'  },
+    { id:'DsBlowOutVolume',         label:'Blowout ul',     phase:'disp', type:'num'  },
+    { id:'DsSettlingTime',          label:'Settle s',       phase:'disp', type:'num'  },
+    { id:'DsSwapSpeed',             label:'Swap mm/s',      phase:'disp', type:'num'  },
+    { id:'DsStopFlowRate',          label:'Stop Flow ul/s', phase:'disp', type:'num'  },
+    { id:'DsStopBackVolume',        label:'Stop Back ul',   phase:'disp', type:'num'  },
+];
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+let SQL       = null;
+let mode      = null;       // 'explore' | 'audit'
+let dbs       = [null, null];
+let dbNames   = ['', ''];
+let dbCounts  = [0, 0];
+let allRows   = [[], []];   // raw row objects per db
+let visible   = { asp: true, disp: true, meta: true };
+let sortCol   = 'LiquidClassName';
+let sortDir   = 'ASC';
+let auditFocus = false;     // mismatches-only mode
+
+// ── BOOT ─────────────────────────────────────────────────────────────────────
+initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/${f}` })
+    .then(s => { SQL = s; buildChips(); checkUrlParams(); });
+
+// ── NAVIGATION ───────────────────────────────────────────────────────────────
+function startMode(m) {
+    mode = m;
+    auditFocus = false;
+    dbs = [null, null]; dbNames = ['',''];
+    dbCounts = [0,0]; allRows = [[],[]];
+    sortCol = 'LiquidClassName'; sortDir = 'ASC';
+    document.getElementById('search').value = '';
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('auditBtn').className  = 'btn btn-audit'  + (mode === 'audit' ? ' show' : '');
+    document.getElementById('exportBtn').className = 'btn btn-export' + (mode === 'audit' ? ' show' : '');
+    document.getElementById('printBtn').className  = 'btn btn-print'  + (mode === 'audit' ? ' show' : '');
+    buildSlots();
+    clearTable();
+    updateStatus();
+}
+
+function goHome() {
+    document.getElementById('landing').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('thead').innerHTML = '';
+    document.getElementById('tbody').innerHTML = '';
+}
+
+// ── DB SLOTS ─────────────────────────────────────────────────────────────────
+function buildSlots() {
+    const container = document.getElementById('dbSlots');
+    container.innerHTML = '';
+    const count = mode === 'audit' ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+        const slot = document.createElement('div');
+        slot.className = `db-slot sys${i+1}`;
+        slot.id = `slot${i}`;
+        slot.innerHTML = `
+            <input type="file" accept=".db,.mdb" onchange="handleFile(${i}, this.files[0])">
+            <div class="slot-icon">${i === 0 ? '📁' : '📂'}</div>
+            <div class="slot-info">
+                <div class="slot-label">${mode === 'audit' ? `System ${i+1}` : 'Database'}</div>
+                <div class="slot-name" id="slotName${i}">Choose .db file…</div>
+                <div class="slot-count" id="slotCount${i}"></div>
+            </div>`;
+        // Drag and drop
+        slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+        slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+        slot.addEventListener('drop', e => {
+            e.preventDefault(); slot.classList.remove('drag-over');
+            const f = e.dataTransfer.files[0];
+            if (f) handleFile(i, f);
+        });
+        container.appendChild(slot);
+    }
+}
+
+// ── FILE LOAD ─────────────────────────────────────────────────────────────────
+async function handleFile(idx, file) {
+    if (!file || !SQL) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'mdb') {
+        alert('MDB files need to be converted to SQLite (.db) first.\n\nOn your Mac, run:\n  mdb-export yourfile.mdb LiquidClass | python3 mdb_to_sqlite.py\n\nSee the included convert.sh script.');
+        return;
+    }
+    const buf  = await file.arrayBuffer();
+    const db   = new SQL.Database(new Uint8Array(buf));
+    try {
+        const res = db.exec("SELECT COUNT(*) FROM LiquidClass");
+        const count = res[0].values[0][0];
+        dbs[idx]      = db;
+        dbNames[idx]  = file.name;
+        dbCounts[idx] = count;
+        loadRows(idx);
+        // Update slot UI - show folder/filename if path available
+        const displayName1 = file.webkitRelativePath || file.name;
+        document.getElementById(`slotName${idx}`).innerText = displayName1;
+        document.getElementById(`slotCount${idx}`).innerText = `${count} classes`;
+        document.getElementById(`slot${idx}`).classList.add('loaded');
+        render();
+        updateStatus();
+    } catch(e) {
+        alert('This file does not appear to be a Hamilton LC database (no LiquidClass table found).');
+    }
+}
+
+function loadRows(idx) {
+    const colIds = COLS.map(c => c.id).join(', ');
+    const res = dbs[idx].exec(`SELECT ${colIds} FROM LiquidClass ORDER BY LiquidClassName ASC`);
+    if (!res.length) { allRows[idx] = []; return; }
+    allRows[idx] = res[0].values.map(r => {
+        const obj = {};
+        COLS.forEach((c, i) => obj[c.id] = r[i]);
+        return obj;
+    });
+}
+
+// ── CHIPS ─────────────────────────────────────────────────────────────────────
+function buildChips() {
+    const container = document.getElementById('chips');
+    [
+        { key: 'asp',  label: '⬆ Aspiration' },
+        { key: 'disp', label: '⬇ Dispense'   },
+        { key: 'meta', label: '◈ Detection / Info' },
+    ].forEach(({ key, label }) => {
+        const chip = document.createElement('div');
+        chip.className = `chip ${key}`;
+        chip.dataset.key = key;
+        chip.innerText = label;
+        chip.onclick = () => {
+            visible[key] = !visible[key];
+            chip.classList.toggle('off', !visible[key]);
+            render();
+        };
+        container.appendChild(chip);
+    });
+}
+
+// u2500u2500 URL PARAM AUTO-LOAD (when launched via launch.py) u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+async function checkUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    const m    = params.get('mode');
+    const db1  = params.get('db1');
+    const dir1 = params.get('db1_dir');
+    const db2  = params.get('db2');
+    const dir2 = params.get('db2_dir');
+    if (!m || !db1) return;
+    startMode(m);
+    const loadRemote = async (idx, filename, dir) => {
+        try {
+            const url = `/localfile?path=${encodeURIComponent(dir + '/' + filename)}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const buf  = await res.arrayBuffer();
+            const db   = new SQL.Database(new Uint8Array(buf));
+            const count = db.exec("SELECT COUNT(*) FROM LiquidClass")[0].values[0][0];
+            dbs[idx] = db; dbNames[idx] = filename; dbCounts[idx] = count;
+            loadRows(idx);
+            const parentFolder = dir.split('/').pop();
+            document.getElementById(`slotName${idx}`).innerText = `${parentFolder} / ${filename}`;
+            document.getElementById(`slotCount${idx}`).innerText = `${count} classes`;
+            document.getElementById(`slot${idx}`).classList.add('loaded');
+            render(); updateStatus();
+        } catch(e) { console.error('Auto-load failed for slot', idx, e); }
+    };
+    if (db1 && dir1) await loadRemote(0, db1, dir1);
+    if (db2 && dir2) await loadRemote(1, db2, dir2);
+}
+
+// ── AUDIT FOCUS ───────────────────────────────────────────────────────────────
+function toggleAuditFocus() {
+    auditFocus = !auditFocus;
+    const btn = document.getElementById('auditBtn');
+    btn.innerText = auditFocus ? 'SHOW ALL' : 'MISMATCHES ONLY';
+    btn.classList.toggle('active', auditFocus);
+    render();
+}
+
+// ── SORT ──────────────────────────────────────────────────────────────────────
+function setSort(colId) {
+    sortDir = (sortCol === colId && sortDir === 'ASC') ? 'DESC' : 'ASC';
+    sortCol = colId;
+    render();
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render() {
+    if (mode === 'explore') renderExplore();
+    else if (mode === 'audit') renderAudit();
+    syncScroll();
+}
+
+function clearTable() {
+    document.getElementById('thead').innerHTML = '';
+    document.getElementById('tbody').innerHTML = '';
+}
+
+// ── EXPLORE RENDER ────────────────────────────────────────────────────────────
+function renderExplore() {
+    if (!dbs[0]) return;
+    const filter  = document.getElementById('search').value.trim().toLowerCase();
+    const visCols = COLS.filter(c => c.phase === 'name' || visible[c.phase]);
+
+    let rows = filter
+        ? allRows[0].filter(r => (r.LiquidClassName||'').toLowerCase().includes(filter))
+        : allRows[0];
+
+    rows = sortRows(rows);
+
+    // THEAD
+    const thead = document.getElementById('thead');
+    thead.innerHTML = '';
+    thead.appendChild(makePhaseRow(visCols, 'explore'));
+    thead.appendChild(makeColHeaderRow(visCols));
+
+    // TBODY
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        visCols.forEach(c => {
+            const td = document.createElement('td');
+            if (c.phase === 'name') { td.className = 'name-cell sticky'; td.innerText = row[c.id] ?? '--'; }
+            else { td.innerText = row[c.id] != null ? row[c.id] : '--'; }
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById('sb_rows').innerHTML =
+        `Showing <strong>${rows.length}</strong> of <strong>${allRows[0].length}</strong> classes`;
+}
+
+// ── AUDIT RENDER ──────────────────────────────────────────────────────────────
+function renderAudit() {
+    if (!dbs[0] || !dbs[1]) return;
+
+    const filter   = document.getElementById('search').value.trim().toLowerCase();
+    const dataCols = COLS.filter(c => c.phase !== 'name' && visible[c.phase]);
+
+    const map1 = new Map(allRows[0].map(r => [r.LiquidClassName, r]));
+    const map2 = new Map(allRows[1].map(r => [r.LiquidClassName, r]));
+
+    // Build all entries: matched, sys1-only, sys2-only
+    let entries = [];
+
+    // Matched classes (exist in both)
+    allRows[0].forEach(r1 => {
+        if (!map2.has(r1.LiquidClassName)) return;
+        const r2    = map2.get(r1.LiquidClassName);
+        const diffs = dataCols.filter(c => normalize(r1[c.id]) !== normalize(r2[c.id])).map(c => c.id);
+        entries.push({ name: r1.LiquidClassName, status: diffs.length > 0 ? 'PARAM DIFF' : 'MATCH', r1, r2, diffs });
+    });
+
+    // Sys1-only classes
+    allRows[0].forEach(r1 => {
+        if (!map2.has(r1.LiquidClassName))
+            entries.push({ name: r1.LiquidClassName, status: 'SYS 1 ONLY', r1, r2: null, diffs: [] });
+    });
+
+    // Sys2-only classes
+    allRows[1].forEach(r2 => {
+        if (!map1.has(r2.LiquidClassName))
+            entries.push({ name: r2.LiquidClassName, status: 'SYS 2 ONLY', r1: null, r2, diffs: [] });
+    });
+
+    // Filter by search
+    if (filter) entries = entries.filter(e => e.name.toLowerCase().includes(filter));
+
+    // Audit focus: hide clean matches
+    if (auditFocus) entries = entries.filter(e => e.status !== 'MATCH');
+
+    // Which cols have any param diff (for column pruning in focus mode)
+    const activeDiffCols = new Set(entries.flatMap(e => e.diffs));
+
+    // Sort
+    entries.sort((a, b) => {
+        const order = { 'PARAM DIFF': 0, 'SYS 1 ONLY': 1, 'SYS 2 ONLY': 2, 'MATCH': 3 };
+        if (sortCol === 'LiquidClassName') {
+            const byStatus = order[a.status] - order[b.status];
+            if (byStatus !== 0) return sortDir === 'ASC' ? byStatus : -byStatus;
+            return sortDir === 'ASC'
+                ? a.name.localeCompare(b.name)
+                : b.name.localeCompare(a.name);
+        }
+        const av = a.r1 ? a.r1[sortCol] : null;
+        const bv = b.r1 ? b.r1[sortCol] : null;
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1; if (bv == null) return -1;
+        const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+        return sortDir === 'ASC' ? cmp : -cmp;
+    });
+
+    const auditCols = (auditFocus && activeDiffCols.size > 0)
+        ? dataCols.filter(c => activeDiffCols.has(c.id))
+        : dataCols;
+
+    // Counts for status bar
+    const nDiff  = entries.filter(e => e.status === 'PARAM DIFF').length;
+    const nSys1  = entries.filter(e => e.status === 'SYS 1 ONLY').length;
+    const nSys2  = entries.filter(e => e.status === 'SYS 2 ONLY').length;
+
+    // THEAD
+    const thead = document.getElementById('thead');
+    thead.innerHTML = '';
+    thead.appendChild(makeAuditPhaseRow(auditCols));
+    thead.appendChild(makeAuditColHeaderRow(auditCols));
+
+    // TBODY
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+
+    const badgeMap = {
+        'PARAM DIFF':  '<span class="status-badge badge-diff">PARAM DIFF</span>',
+        'SYS 1 ONLY':  '<span class="status-badge badge-sys1">SYS 1 ONLY</span>',
+        'SYS 2 ONLY':  '<span class="status-badge badge-sys2">SYS 2 ONLY</span>',
+        'MATCH':       '<span class="status-badge badge-match">MATCH</span>',
+    };
+
+    entries.forEach(({ name, status, r1, r2, diffs }) => {
+        const tr = document.createElement('tr');
+
+        // Name cell
+        const tdName = document.createElement('td');
+        tdName.className = 'name-cell sticky';
+        tdName.innerText = name;
+        tr.appendChild(tdName);
+
+        // Status cell
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'status-cell';
+        tdStatus.innerHTML = badgeMap[status] || status;
+        tr.appendChild(tdStatus);
+
+        // Data pairs
+        auditCols.forEach(c => {
+            const isDiff = diffs.includes(c.id);
+            const v1 = r1 ? (r1[c.id] != null ? r1[c.id] : '--') : '--';
+            const v2 = r2 ? (r2[c.id] != null ? r2[c.id] : '--') : '--';
+
+            const td1 = document.createElement('td');
+            const td2 = document.createElement('td');
+            td1.innerText = v1;
+            td2.innerText = v2;
+            td2.className = 'sys2-val';
+
+            if (!r1) { td1.className = 'absent'; td1.innerText = '--'; }
+            if (!r2) { td2.className = 'absent sys2-val'; td2.innerText = '--'; }
+            if (isDiff) { td1.classList.add('mismatch'); td2.classList.add('mismatch'); }
+
+            tr.appendChild(td1);
+            tr.appendChild(td2);
+        });
+
+        tbody.appendChild(tr);
+    });
+
+    // Status bar
+    document.getElementById('sb_rows').innerHTML =
+        `<strong>${entries.length}</strong> classes shown`;
+
+    let parts = [];
+    if (nDiff > 0)  parts.push(`<strong style="color:var(--diff)">${nDiff} param diff</strong>`);
+    if (nSys1 > 0)  parts.push(`<strong style="color:#fbbf24">${nSys1} sys1 only</strong>`);
+    if (nSys2 > 0)  parts.push(`<strong style="color:#22d3ee">${nSys2} sys2 only</strong>`);
+    if (parts.length === 0) parts.push(`<strong style="color:#34d399">All parameters match</strong>`);
+    document.getElementById('sb_mismatches').innerHTML = parts.join(' &nbsp;·&nbsp; ');
+}
+
+// ── HEADER BUILDERS ───────────────────────────────────────────────────────────
+function makePhaseRow(visCols, m) {
+    const tr = document.createElement('tr');
+    tr.className = 'ph-row';
+    let cur = null, th = null;
+    visCols.forEach(c => {
+        if (c.phase !== cur) {
+            cur = c.phase;
+            th = document.createElement('th');
+            th.colSpan = 1;
+            th.className = `ph-${c.phase}`;
+            if (c.phase === 'name') { th.classList.add('sticky'); th.innerText = 'LIQUID CLASS NAME'; }
+            else if (c.phase === 'asp')  th.innerText = '⬆  ASPIRATION';
+            else if (c.phase === 'disp') th.innerText = '⬇  DISPENSE';
+            else if (c.phase === 'meta') th.innerText = '◈  DETECTION / INFO';
+            tr.appendChild(th);
+        } else {
+            th.colSpan++;
+        }
+    });
+    return tr;
+}
+
+function makeColHeaderRow(visCols) {
+    const tr = document.createElement('tr');
+    tr.className = 'ch-row';
+    visCols.forEach(c => {
+        const th = document.createElement('th');
+        if (c.phase === 'name') th.classList.add('sticky');
+        if (sortCol === c.id) th.classList.add('sorted');
+        th.innerText = c.label + (sortCol === c.id ? (sortDir === 'ASC' ? ' ↑' : ' ↓') : '');
+        th.onclick = () => setSort(c.id);
+        tr.appendChild(th);
+    });
+    return tr;
+}
+
+function makeAuditPhaseRow(auditCols) {
+    const tr = document.createElement('tr');
+    tr.className = 'ph-row';
+    // Name col
+    const thName = document.createElement('th');
+    thName.className = 'ph-name sticky';
+    thName.innerText = 'LIQUID CLASS NAME';
+    tr.appendChild(thName);
+    // Status col
+    const thStatus = document.createElement('th');
+    thStatus.className = 'ph-name';
+    thStatus.innerText = 'STATUS';
+    tr.appendChild(thStatus);
+    // Phase groups -- each param = 2 cols (sys1 + sys2)
+    let curPhase = null, groupTh = null;
+    auditCols.forEach(c => {
+        if (c.phase !== curPhase) {
+            curPhase = c.phase;
+            groupTh = document.createElement('th');
+            groupTh.colSpan = 2;
+            groupTh.className = c.phase === 'asp' ? 'ph-asp' : c.phase === 'disp' ? 'ph-disp' : 'ph-meta';
+            groupTh.innerText = c.phase === 'asp' ? '⬆  ASPIRATION' : c.phase === 'disp' ? '⬇  DISPENSE' : '◈  DETECTION / INFO';
+            tr.appendChild(groupTh);
+        } else {
+            groupTh.colSpan += 2;
+        }
+    });
+    return tr;
+}
+
+function makeAuditColHeaderRow(auditCols) {
+    const tr = document.createElement('tr');
+    tr.className = 'ch-row';
+    // Name header
+    const thName = document.createElement('th');
+    thName.className = 'sticky';
+    thName.innerText = 'NAME';
+    thName.onclick = () => setSort('LiquidClassName');
+    if (sortCol === 'LiquidClassName') thName.classList.add('sorted');
+    tr.appendChild(thName);
+    // Status header
+    const thStatus = document.createElement('th');
+    thStatus.innerText = 'STATUS';
+    thStatus.onclick = () => setSort('LiquidClassName'); // sort by status+name
+    tr.appendChild(thStatus);
+    // Param pairs
+    auditCols.forEach(c => {
+        const th1 = document.createElement('th');
+        th1.innerHTML = `${c.label}<br><span style="color:#60a5fa;font-size:8px;letter-spacing:0.1em">SYS 1</span>`;
+        th1.onclick = () => setSort(c.id);
+        if (sortCol === c.id) th1.classList.add('sorted');
+        const th2 = document.createElement('th');
+        th2.innerHTML = `${c.label}<br><span style="color:var(--asp);font-size:8px;letter-spacing:0.1em">SYS 2</span>`;
+        tr.appendChild(th1);
+        tr.appendChild(th2);
+    });
+    return tr;
+}
+
+// ── SORT HELPER ───────────────────────────────────────────────────────────────
+function sortRows(rows, nameKey) {
+    const key = nameKey || sortCol;
+    return [...rows].sort((a, b) => {
+        const av = nameKey ? a[nameKey] : a[sortCol];
+        const bv = nameKey ? b[nameKey] : b[sortCol];
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+        return sortDir === 'ASC' ? cmp : -cmp;
+    });
+}
+
+// ── STATUS ────────────────────────────────────────────────────────────────────
+function updateStatus() {
+    const modeLabel = mode === 'explore' ? 'Explorer Mode' : 'Cross-Audit Mode';
+    document.getElementById('sb_mode').innerHTML = `Mode: <strong>${modeLabel}</strong>`;
+    if (mode !== 'audit') document.getElementById('sb_mismatches').innerHTML = '';
+}
+
+// ── SCROLL SYNC ───────────────────────────────────────────────────────────────
+function syncScroll() {
+    const top   = document.getElementById('topScroll');
+    const bot   = document.getElementById('tableWrap');
+    const dummy = document.getElementById('topScrollContent');
+    const table = document.getElementById('mainTable');
+    dummy.style.width = (table.scrollWidth || 0) + 'px';
+    top.onscroll = () => bot.scrollLeft = top.scrollLeft;
+    bot.onscroll = () => top.scrollLeft = bot.scrollLeft;
+}
+
+// ── EXPORT EXCEL ─────────────────────────────────────────────────────────────
+function exportXLSX() {
+    if (!dbs[0] || !dbs[1]) return;
+
+    const dataCols  = COLS.filter(c => c.phase !== 'name' && visible[c.phase]);
+    const sys1Label = dbNames[0] || 'System 1';
+    const sys2Label = dbNames[1] || 'System 2';
+    const date      = new Date().toLocaleDateString();
+    const map1      = new Map(allRows[0].map(r => [r.LiquidClassName, r]));
+    const map2      = new Map(allRows[1].map(r => [r.LiquidClassName, r]));
+
+    // Build entries
+    let entries = [];
+    allRows[0].forEach(r1 => {
+        if (!map2.has(r1.LiquidClassName)) return;
+        const r2    = map2.get(r1.LiquidClassName);
+        const diffs = dataCols.filter(c => normalize(r1[c.id]) !== normalize(r2[c.id])).map(c => c.id);
+        entries.push({ name: r1.LiquidClassName, status: diffs.length > 0 ? 'PARAM DIFF' : 'MATCH', r1, r2, diffs });
+    });
+    allRows[0].forEach(r1 => { if (!map2.has(r1.LiquidClassName)) entries.push({ name: r1.LiquidClassName, status: 'SYS 1 ONLY', r1, r2: null,  diffs: [] }); });
+    allRows[1].forEach(r2 => { if (!map1.has(r2.LiquidClassName)) entries.push({ name: r2.LiquidClassName, status: 'SYS 2 ONLY', r1: null,  r2, diffs: [] }); });
+    entries = entries.filter(e => e.status !== 'MATCH');
+
+    const nDiff = entries.filter(e => e.status === 'PARAM DIFF').length;
+    const nSys1 = entries.filter(e => e.status === 'SYS 1 ONLY').length;
+    const nSys2 = entries.filter(e => e.status === 'SYS 2 ONLY').length;
+
+    const wb = XLSX.utils.book_new();
+    const ws = {};
+    let row = 0;
+
+    // ── Helper to write a cell with style ──
+    const C = (r, c) => XLSX.utils.encode_cell({ r, c });
+    const setCell = (r, c, v, s) => {
+        ws[C(r,c)] = { v, t: typeof v === 'number' ? 'n' : 's', s };
+    };
+
+    // ── Styles ──
+    const sTitle   = { font: { bold: true, sz: 14, color: { rgb: '1E293B' } }, fill: { fgColor: { rgb: 'F1F5F9' } } };
+    const sMeta    = { font: { sz: 10, color: { rgb: '64748B' } }, fill: { fgColor: { rgb: 'F8FAFC' } } };
+    const sPhaseAsp  = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0E7490' } }, alignment: { horizontal: 'center' } };
+    const sPhaseDisp = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '9D174D' } }, alignment: { horizontal: 'center' } };
+    const sPhaseMeta = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '3F6212' } }, alignment: { horizontal: 'center' } };
+    const sPhaseInfo = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '334155' } }, alignment: { horizontal: 'center' } };
+    const sColHdr  = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1E293B' } }, alignment: { horizontal: 'center', wrapText: true } };
+    const sColHdrS1 = { font: { bold: true, sz: 9, color: { rgb: 'DBEAFE' } }, fill: { fgColor: { rgb: '1E3A5F' } }, alignment: { horizontal: 'center', wrapText: true } };
+    const sColHdrS2 = { font: { bold: true, sz: 9, color: { rgb: 'CFFAFE' } }, fill: { fgColor: { rgb: '164E63' } }, alignment: { horizontal: 'center', wrapText: true } };
+    const sDiff    = { font: { bold: true, sz: 10, color: { rgb: 'DC2626' } }, fill: { fgColor: { rgb: 'FEE2E2' } }, alignment: { horizontal: 'center' } };
+    const sSys1Row = { font: { sz: 10, color: { rgb: '92400E' } }, fill: { fgColor: { rgb: 'FFFBEB' } }, alignment: { horizontal: 'center' } };
+    const sSys2Row = { font: { sz: 10, color: { rgb: '075985' } }, fill: { fgColor: { rgb: 'E0F2FE' } }, alignment: { horizontal: 'center' } };
+    const sName    = { font: { bold: true, sz: 10, color: { rgb: '1D4ED8' } }, fill: { fgColor: { rgb: 'F8FAFC' } } };
+    const sNameDiff = { font: { bold: true, sz: 10, color: { rgb: '1D4ED8' } }, fill: { fgColor: { rgb: 'FEF2F2' } } };
+    const sNameSys1 = { font: { bold: true, sz: 10, color: { rgb: '92400E' } }, fill: { fgColor: { rgb: 'FFFBEB' } } };
+    const sNameSys2 = { font: { bold: true, sz: 10, color: { rgb: '075985' } }, fill: { fgColor: { rgb: 'E0F2FE' } } };
+    const sAbsent  = { font: { sz: 10, color: { rgb: 'CBD5E1' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center' } };
+    const sStatusDiff = { font: { bold: true, sz: 9, color: { rgb: 'DC2626' } }, fill: { fgColor: { rgb: 'FEE2E2' } }, alignment: { horizontal: 'center' } };
+    const sStatusSys1 = { font: { bold: true, sz: 9, color: { rgb: 'B45309' } }, fill: { fgColor: { rgb: 'FEF3C7' } }, alignment: { horizontal: 'center' } };
+    const sStatusSys2 = { font: { bold: true, sz: 9, color: { rgb: '0369A1' } }, fill: { fgColor: { rgb: 'E0F2FE' } }, alignment: { horizontal: 'center' } };
+    const sNormal  = { font: { sz: 10 }, alignment: { horizontal: 'center' } };
+
+    // ── Row 0: Title ──
+    setCell(row, 0, 'Hamilton Liquid Class Audit Report', sTitle);
+    row++;
+
+    // ── Row 1: System info ──
+    setCell(row, 0, `System 1: ${sys1Label}`, sMeta);
+    setCell(row, 2, `System 2: ${sys2Label}`, sMeta);
+    row++;
+
+    // ── Row 2: Date + summary ──
+    setCell(row, 0, `Generated: ${date}`, sMeta);
+    setCell(row, 2, `${nDiff} param diff  ·  ${nSys1} sys1 only  ·  ${nSys2} sys2 only`, sMeta);
+    row++;
+    row++; // blank row
+
+    // ── Row 4: Phase header row ──
+    setCell(row, 0, 'LIQUID CLASS NAME', sPhaseInfo);
+    setCell(row, 1, 'STATUS', sPhaseInfo);
+    let col = 2;
+    let phaseGroups = [];
+    let curPhase = null, phStart = 2;
+    dataCols.forEach((c, i) => {
+        if (c.phase !== curPhase) {
+            if (curPhase !== null) phaseGroups.push({ phase: curPhase, start: phStart, end: col - 1 });
+            curPhase = c.phase; phStart = col;
+        }
+        col += 2;
+    });
+    if (curPhase !== null) phaseGroups.push({ phase: curPhase, start: phStart, end: col - 1 });
+
+    phaseGroups.forEach(g => {
+        const s = g.phase === 'asp' ? sPhaseAsp : g.phase === 'disp' ? sPhaseDisp : sPhaseMeta;
+        const label = g.phase === 'asp' ? 'ASPIRATION' : g.phase === 'disp' ? 'DISPENSE' : 'DETECTION / INFO';
+        setCell(row, g.start, label, s);
+        // Merge across the group
+        if (!ws['!merges']) ws['!merges'] = [];
+        ws['!merges'].push({ s: { r: row, c: g.start }, e: { r: row, c: g.end } });
+    });
+    // Merge title cells
+    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+    ws['!merges'].push({ s: { r: 4, c: 0 }, e: { r: 4, c: 0 } });
+    row++;
+
+    // ── Row 5: Column headers ──
+    setCell(row, 0, 'Liquid Class Name', sColHdr);
+    setCell(row, 1, 'Status', sColHdr);
+    col = 2;
+    dataCols.forEach(c => {
+        setCell(row, col,   `${c.label}
+${sys1Label}`, sColHdrS1);
+        setCell(row, col+1, `${c.label}
+${sys2Label}`, sColHdrS2);
+        col += 2;
+    });
+    row++;
+
+    // ── Data rows ──
+    // Sort: PARAM DIFF first, then SYS 1 ONLY, SYS 2 ONLY
+    const order = { 'PARAM DIFF': 0, 'SYS 1 ONLY': 1, 'SYS 2 ONLY': 2 };
+    entries.sort((a, b) => (order[a.status] - order[b.status]) || a.name.localeCompare(b.name));
+
+    entries.forEach(({ name, status, r1, r2, diffs }) => {
+        const rowStyle  = status === 'SYS 1 ONLY' ? sSys1Row : status === 'SYS 2 ONLY' ? sSys2Row : sNormal;
+        const nameStyle = status === 'PARAM DIFF' ? sNameDiff : status === 'SYS 1 ONLY' ? sNameSys1 : status === 'SYS 2 ONLY' ? sNameSys2 : sName;
+        const statStyle = status === 'PARAM DIFF' ? sStatusDiff : status === 'SYS 1 ONLY' ? sStatusSys1 : sStatusSys2;
+
+        setCell(row, 0, name,   nameStyle);
+        setCell(row, 1, status, statStyle);
+
+        col = 2;
+        dataCols.forEach(c => {
+            const isDiff = diffs.includes(c.id);
+            const v1 = r1 ? (r1[c.id] != null ? r1[c.id] : '--') : '--';
+            const v2 = r2 ? (r2[c.id] != null ? r2[c.id] : '--') : '--';
+            const num1 = (!isNaN(Number(v1)) && v1 !== '--') ? Number(v1) : v1;
+            const num2 = (!isNaN(Number(v2)) && v2 !== '--') ? Number(v2) : v2;
+            setCell(row, col,   num1, isDiff ? sDiff : !r1 ? sAbsent : rowStyle);
+            setCell(row, col+1, num2, isDiff ? sDiff : !r2 ? sAbsent : rowStyle);
+            col += 2;
+        });
+        row++;
+    });
+
+    // ── Set column widths ──
+    const colWidths = [{ wch: 45 }, { wch: 12 }];
+    dataCols.forEach(() => { colWidths.push({ wch: 11 }); colWidths.push({ wch: 11 }); });
+    ws['!cols'] = colWidths;
+
+    // ── Row heights ──
+    ws['!rows'] = [];
+    ws['!rows'][5] = { hpt: 30 }; // column header row taller for wrapped text
+
+    // ── Sheet range ──
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: row, c: 1 + dataCols.length * 2 } });
+
+    XLSX.utils.book_append_sheet(wb, ws, 'LC Audit');
+
+    const filename = `Hamilton_LC_Audit_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+}
+
+// ── PRINT REPORT ──────────────────────────────────────────────────────────────
+function printReport() {
+    if (!dbs[0] || !dbs[1]) return;
+
+    const date     = new Date().toLocaleDateString();
+    const sys1     = dbNames[0] || 'System 1';
+    const sys2     = dbNames[1] || 'System 2';
+    const map1     = new Map(allRows[0].map(r => [r.LiquidClassName, r]));
+    const map2     = new Map(allRows[1].map(r => [r.LiquidClassName, r]));
+    const dataCols = COLS.filter(c => c.phase !== 'name' && visible[c.phase]);
+
+    let nDiff = 0, nSys1 = 0, nSys2 = 0;
+    allRows[0].forEach(r1 => {
+        if (!map2.has(r1.LiquidClassName)) { nSys1++; return; }
+        const diffs = dataCols.filter(c => normalize(r1[c.id]) !== normalize(map2.get(r1.LiquidClassName)[c.id])).length;
+        if (diffs > 0) nDiff++;
+    });
+    allRows[1].forEach(r2 => { if (!map1.has(r2.LiquidClassName)) nSys2++; });
+
+    // Set print header
+    document.getElementById('ph-title').innerText = `Hamilton LC Audit Report  ·  ${date}`;
+    document.getElementById('ph-sub').innerText =
+        `System 1: ${sys1}   |   System 2: ${sys2}   |   ${nDiff} param diff · ${nSys1} sys1 only · ${nSys2} sys2 only`;
+
+    // Make sure we're showing mismatches only for a clean report
+    const wasAuditFocus = auditFocus;
+    if (!auditFocus) { auditFocus = true; render(); }
+
+    window.print();
+
+    // Restore state
+    if (!wasAuditFocus) { auditFocus = false; render(); }
+}
+
+// ── NORMALIZE (shared helper) ─────────────────────────────────────────────────
+function normalize(v) {
+    if (v == null || v === '' || v === '-') return '';
+    const n = Number(v);
+    return isNaN(n) ? String(v).trim() : String(n);
+}
+
+</script>
+</body>
+</html>

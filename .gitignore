@@ -1,0 +1,30 @@
+# Mac system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Converted database files (generated locally, not committed)
+*.db
+!Site_A_Master.db
+!Site_B_STARlet.db
+
+# Source MDB files (may contain sensitive instrument data)
+*.mdb
+*.MDB
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Generated outputs
+*.xlsx
+*.csv
+
+# VS Code
+.vscode/
+
+# Editor temp files
+*.swp
+*.swo
+*~
