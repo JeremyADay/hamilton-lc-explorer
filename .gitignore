@@ -12,11 +12,6 @@
 *.mdb
 *.MDB
 
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-
 # Generated outputs
 *.xlsx
 *.csv
@@ -28,3 +23,5 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+generate_test_dbs.py
