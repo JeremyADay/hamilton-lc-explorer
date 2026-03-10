@@ -1,4 +1,4 @@
-# Hamilton LC Explorer V2
+# Hamilton LC Explorer V3
 
 A browser-based tool for exploring and comparing Hamilton liquid handler liquid class databases. Built for Venus software users who need search and cross-instrument comparison capabilities that the built-in Liquid Class Editor does not provide.
 
@@ -7,7 +7,7 @@ A browser-based tool for exploring and comparing Hamilton liquid handler liquid 
 ## What It Does
 
 ### Explorer Mode
-Load a single `ML_STARLiquids.db` file and browse all liquid classes in a searchable, sortable table. Toggle aspiration, dispense, and detection parameter groups on and off. Useful as a replacement for the Venus Liquid Class Editor when you just need to find and inspect a class quickly.
+Load a single `ML_STARLiquids.db` file and browse all liquid classes in a searchable, sortable table. Toggle aspiration, dispense, and detection parameter groups on and off. Tip Type and Dispense Mode columns display human readable labels rather than raw numbers. Export the current view to a formatted Excel file or print directly from the browser.
 
 ### Cross-Audit Mode
 Load two databases from two different instruments and compare them side by side. The tool identifies:
@@ -24,6 +24,8 @@ Use **MISMATCHES ONLY** to filter down to anomalies only. Export findings to a f
 
 When two Hamilton instruments run similar methods and produce inconsistent results, liquid class parameter drift is a common culprit. Venus provides no native way to compare liquid classes across instruments -- importing one instrument's packages overwrites the other's. This tool solves that by working directly with the database files offline, with no risk of modifying anything on either instrument.
 
+The Venus Liquid Class Editor also provides no search capability -- finding a specific class requires scrolling through hundreds of entries. This tool makes that instant.
+
 **All operations are strictly read-only. No data is ever modified or transmitted.**
 
 ---
@@ -35,9 +37,9 @@ Hamilton Venus runs on Windows, but the analyst or consultant performing the com
 ### Mac
 - Python 3 (included on modern macOS)
 - mdbtools -- install via Homebrew:
-```bash
+  ```bash
   brew install mdbtools
-```
+  ```
 
 ### Windows
 Windows support via `pyodbc` is planned. See the Windows section below.
@@ -55,6 +57,7 @@ C:\Program Files (x86)\HAMILTON\Config\ML_STARLiquids.mdb
 For a cross-audit, copy this file from both instruments and place them in separate named folders so you can tell them apart (e.g. `Site_A/ML_STARLiquids.mdb` and `Site_B/ML_STARLiquids.mdb`).
 
 ### 2. Run the launcher
+
 ```bash
 python3 launch.py
 ```
@@ -78,12 +81,7 @@ Two test databases are included -- `Site_A_Master.db` and `Site_B_STARlet.db`. T
 - `AsFlowRate` modified for all Water liquid classes
 - `PressureLLDSensitivity` modified for Ethanol classes
 
-Load them directly into the HTML tool via the file pickers in the UI to verify the audit logic is working correctly. You should see those classes flagged as PARAM DIFF in Cross-Audit mode.
-
-To regenerate the test databases from a source `.db` file:
-```bash
-python3 generate_test_dbs.py
-```
+Load them directly into the HTML tool via the file pickers to verify the audit logic is working correctly. You should see those classes flagged as PARAM DIFF in Cross-Audit mode.
 
 ---
 
@@ -91,9 +89,8 @@ python3 generate_test_dbs.py
 
 | File | Purpose |
 |------|---------|
-| `hamilton_lc_v2.html` | Main browser tool -- Explorer and Cross-Audit modes |
+| `hamilton_lc_v3.html` | Main browser tool -- Explorer and Cross-Audit modes |
 | `launch.py` | Mac launcher -- converts `.mdb` to `.db`, starts server, opens browser |
-| `generate_test_dbs.py` | Generates the two test databases from a source `.db` file |
 | `Site_A_Master.db` | Test database -- reference instrument |
 | `Site_B_STARlet.db` | Test database -- instrument with injected differences |
 
@@ -104,7 +101,7 @@ python3 generate_test_dbs.py
 The Windows path for this tool is planned but not yet implemented. Hamilton Venus always runs on Windows, but the person performing the liquid class analysis may be on Mac or Windows regardless. The intended approach for a Windows-native workflow is:
 
 - A Python script using `pyodbc` and the Microsoft Access ODBC driver to convert `.mdb` to SQLite
-- The same `hamilton_lc_v2.html` tool works identically once the conversion is done
+- The same `hamilton_lc_v3.html` tool works identically once the conversion is done
 - A `.bat` setup validator to check Python, Access drivers, and pyodbc are installed
 
 Contributions welcome.
@@ -113,6 +110,7 @@ Contributions welcome.
 
 ## Notes and Limitations
 
+- Tip Type and Dispense Mode labels are verified against Venus 4.5.0.7977. Labels may differ on other Venus versions.
 - The tool loads the entire `LiquidClass` table. Performance scales with the number of liquid classes in the database -- heavily customized sites with large custom LC libraries may have significantly more than a default installation.
 - Liquid class parameter comparison normalizes numeric values before comparing, so `500`, `"500"`, and `500.0` are treated as equal.
 - The `.mdb` to `.db` conversion uses `mdb-export` (mdbtools) with `latin-1` decoding to correctly handle special characters such as the µ symbol in parameter labels.
