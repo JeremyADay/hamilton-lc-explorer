@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hamilton LC Tool V2</title>
+    <title>Hamilton LC Tool V3</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -269,7 +269,7 @@
 
 <!-- ── LANDING ── -->
 <div id="landing">
-    <div class="landing-title">Hamilton <span>LC</span> Tool &nbsp;·&nbsp; V2.0</div>
+    <div class="landing-title">Hamilton <span>LC</span> Tool &nbsp;·&nbsp; V3.0</div>
     <div class="mode-cards">
         <div class="mode-card" onclick="startMode('explore')">
             <div class="mode-icon">🔬</div>
@@ -301,7 +301,7 @@
 
     <!-- TOP BAR -->
     <div class="topbar">
-        <div class="logo" onclick="goHome()" title="Back to home">LC<span class="logo-sub">/</span>TOOL <span class="logo-sub">V2</span></div>
+        <div class="logo" onclick="goHome()" title="Back to home">LC<span class="logo-sub">/</span>TOOL <span class="logo-sub">V3</span></div>
 
         <div class="db-slots" id="dbSlots">
             <!-- populated by startMode() -->
@@ -309,8 +309,8 @@
 
         <button class="btn btn-back" onclick="goHome()">← Home</button>
         <button class="btn btn-audit" id="auditBtn" onclick="toggleAuditFocus()">MISMATCHES ONLY</button>
-        <button class="btn btn-export" id="exportBtn" onclick="exportXLSX()">⬇ EXPORT EXCEL</button>
-        <button class="btn btn-print"  id="printBtn"  onclick="printReport()">🖨 PRINT REPORT</button>
+        <button class="btn btn-export" id="exportBtn" onclick="handleExport()">⬇ EXPORT EXCEL</button>
+        <button class="btn btn-print"  id="printBtn"  onclick="handlePrint()">🖨 PRINT REPORT</button>
     </div>
 
     <!-- TOOLBAR -->
@@ -367,7 +367,52 @@ const COLS = [
     { id:'DsStopBackVolume',        label:'Stop Back ul',   phase:'disp', type:'num'  },
 ];
 
-// ── STATE ────────────────────────────────────────────────────────────────────
+// ── TIP TYPE LOOKUP (verified against Venus 4.5.0.7977) ─────────────────────
+const TIP_TYPE = {
+    0:  '300ul Standard Volume Tip (0)',
+    1:  '300ul Standard Volume Tip with Filter (1)',
+    2:  '10ul Low Volume Tip (2)',
+    3:  '10ul Low Volume Tip with Filter (3)',
+    4:  '1000ul High Volume Tip (4)',
+    5:  '1000ul High Volume Tip with Filter (5)',
+    6:  '50ul Low Volume Needle OLD (6)',
+    7:  '300ul Standard Volume Needle OLD (7)',
+    8:  '1000ul High Volume Needle OLD (8)',
+    11: '10ul Needle (11)',
+    12: '300ul Needle (12)',
+    13: '1000ul Needle (13)',
+    15: '30ul Tip for 384 (15)',
+    20: '50ul Tip for 384 (20)',
+    22: '50ul Tip (22)',
+    23: '50ul Tip with Filter (23)',
+    25: '5ml Tip (25)',
+    28: '300ul Rocket Tip (96) for 384 (28)',
+    29: '4ml Tip with Filter (29)',
+    33: '50ul Tip Conductive for 384 (33)',
+    35: '250ul Piercing Tip (35)',
+    36: 'SLIM CO-RE Tip 300ul (36)',
+    44: '150ul Piercing Tip with Filter (44)',
+    45: 'SLIM CO-RE Tip 300ul with Filter (45)',
+};
+
+// ── DISPENSE MODE LOOKUP ──────────────────────────────────────────────────────
+const DISPENSE_MODE = {
+    0: 'Jet Empty (0)',
+    1: 'Jet Part (1)',
+    2: 'Surface Empty (2)',
+    3: 'Surface Part (3)',
+    4: 'Jet Aliquot (4)',
+    5: 'Surface Aliquot (5)',
+};
+
+function fmtCell(colId, value) {
+    if (value == null) return '--';
+    if (colId === 'TipType')      return TIP_TYPE[value]      ?? `Unknown (${value})`;
+    if (colId === 'DispenseMode') return DISPENSE_MODE[value]  ?? `Unknown (${value})`;
+    return value;
+}
+
+// ── STATE ────────────────────────────────────────────────────────────────────────
 let SQL       = null;
 let mode      = null;       // 'explore' | 'audit'
 let dbs       = [null, null];
@@ -394,8 +439,8 @@ function startMode(m) {
     document.getElementById('landing').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('auditBtn').className  = 'btn btn-audit'  + (mode === 'audit' ? ' show' : '');
-    document.getElementById('exportBtn').className = 'btn btn-export' + (mode === 'audit' ? ' show' : '');
-    document.getElementById('printBtn').className  = 'btn btn-print'  + (mode === 'audit' ? ' show' : '');
+    document.getElementById('exportBtn').className = 'btn btn-export show';
+    document.getElementById('printBtn').className  = 'btn btn-print show';
     buildSlots();
     clearTable();
     updateStatus();
@@ -583,7 +628,7 @@ function renderExplore() {
         visCols.forEach(c => {
             const td = document.createElement('td');
             if (c.phase === 'name') { td.className = 'name-cell sticky'; td.innerText = row[c.id] ?? '--'; }
-            else { td.innerText = row[c.id] != null ? row[c.id] : '--'; }
+            else { td.innerText = fmtCell(c.id, row[c.id]); }
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -697,8 +742,10 @@ function renderAudit() {
         // Data pairs
         auditCols.forEach(c => {
             const isDiff = diffs.includes(c.id);
-            const v1 = r1 ? (r1[c.id] != null ? r1[c.id] : '--') : '--';
-            const v2 = r2 ? (r2[c.id] != null ? r2[c.id] : '--') : '--';
+            const v1raw = r1 ? r1[c.id] : null;
+            const v2raw = r2 ? r2[c.id] : null;
+            const v1 = r1 ? fmtCell(c.id, v1raw) : '--';
+            const v2 = r2 ? fmtCell(c.id, v2raw) : '--';
 
             const td1 = document.createElement('td');
             const td2 = document.createElement('td');
@@ -857,6 +904,103 @@ function syncScroll() {
     bot.onscroll = () => top.scrollLeft = bot.scrollLeft;
 }
 
+// ── EXPORT EXCEL (Explorer mode -- single DB) ────────────────────────────────
+function exportExploreXLSX() {
+    if (!dbs[0]) return;
+    const dataCols = COLS.filter(c => c.phase !== 'name' && visible[c.phase]);
+    const filter   = document.getElementById('search').value.trim().toLowerCase();
+    let rows = filter ? allRows[0].filter(r => (r.LiquidClassName||'').toLowerCase().includes(filter)) : allRows[0];
+    rows = sortRows(rows);
+
+    const wb = XLSX.utils.book_new();
+    const ws = {};
+    let row = 0;
+    const C = (r, c) => XLSX.utils.encode_cell({ r, c });
+    const setCell = (r, c, v, s) => { ws[C(r,c)] = { v, t: typeof v === 'number' ? 'n' : 's', s }; };
+
+    const sTitle   = { font: { bold: true, sz: 14 }, fill: { fgColor: { rgb: 'F1F5F9' } } };
+    const sMeta    = { font: { sz: 10, color: { rgb: '64748B' } } };
+    const sPhaseAsp  = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0E7490' } }, alignment: { horizontal: 'center' } };
+    const sPhaseDisp = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '9D174D' } }, alignment: { horizontal: 'center' } };
+    const sPhaseMeta = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '3F6212' } }, alignment: { horizontal: 'center' } };
+    const sPhaseInfo = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '334155' } }, alignment: { horizontal: 'center' } };
+    const sColHdr  = { font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1E293B' } }, alignment: { horizontal: 'center', wrapText: true } };
+    const sName    = { font: { bold: true, sz: 10, color: { rgb: '1D4ED8' } }, fill: { fgColor: { rgb: 'F8FAFC' } } };
+    const sNormal  = { font: { sz: 10 }, alignment: { horizontal: 'center' } };
+
+    // Title
+    setCell(row, 0, 'Hamilton LC Explorer Report', sTitle);
+    row++;
+    setCell(row, 0, `Database: ${dbNames[0]}`, sMeta);
+    setCell(row, 2, `Generated: ${new Date().toLocaleDateString()}`, sMeta);
+    row++;
+    setCell(row, 0, `${rows.length} liquid classes`, sMeta);
+    row++;
+    row++; // blank
+
+    // Phase header row
+    setCell(row, 0, 'LIQUID CLASS NAME', sPhaseInfo);
+    let col = 1;
+    let phaseGroups = [], curPhase = null, phStart = 1;
+    dataCols.forEach(c => {
+        if (c.phase !== curPhase) {
+            if (curPhase !== null) phaseGroups.push({ phase: curPhase, start: phStart, end: col - 1 });
+            curPhase = c.phase; phStart = col;
+        }
+        col++;
+    });
+    if (curPhase !== null) phaseGroups.push({ phase: curPhase, start: phStart, end: col - 1 });
+    if (!ws['!merges']) ws['!merges'] = [];
+    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+    phaseGroups.forEach(g => {
+        const s = g.phase === 'asp' ? sPhaseAsp : g.phase === 'disp' ? sPhaseDisp : sPhaseMeta;
+        const label = g.phase === 'asp' ? 'ASPIRATION' : g.phase === 'disp' ? 'DISPENSE' : 'DETECTION / INFO';
+        setCell(row, g.start, label, s);
+        ws['!merges'].push({ s: { r: row, c: g.start }, e: { r: row, c: g.end } });
+    });
+    row++;
+
+    // Column headers
+    setCell(row, 0, 'Liquid Class Name', sColHdr);
+    col = 1;
+    dataCols.forEach(c => { setCell(row, col++, c.label, sColHdr); });
+    row++;
+
+    // Data rows
+    rows.forEach(r => {
+        setCell(row, 0, r.LiquidClassName, sName);
+        col = 1;
+        dataCols.forEach(c => {
+            const raw = r[c.id];
+            const display = fmtCell(c.id, raw);
+            const num = (raw != null && !isNaN(Number(raw)) && c.id !== 'TipType' && c.id !== 'DispenseMode') ? Number(raw) : display;
+            setCell(row, col++, num, sNormal);
+        });
+        row++;
+    });
+
+    // Column widths
+    const colWidths = [{ wch: 45 }];
+    dataCols.forEach(c => colWidths.push({ wch: c.id === 'TipType' || c.id === 'DispenseMode' ? 30 : 11 }));
+    ws['!cols'] = colWidths;
+    ws['!rows'] = []; ws['!rows'][5] = { hpt: 30 };
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: row, c: dataCols.length } });
+
+    XLSX.utils.book_append_sheet(wb, ws, 'LC Explorer');
+    XLSX.writeFile(wb, `Hamilton_LC_Explorer_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ── PRINT REPORT (Explorer mode) ─────────────────────────────────────────────
+function printExploreReport() {
+    if (!dbs[0]) return;
+    const date = new Date().toLocaleDateString();
+    const filter = document.getElementById('search').value.trim();
+    document.getElementById('ph-title').innerText = `Hamilton LC Explorer Report  ·  ${date}`;
+    document.getElementById('ph-sub').innerText =
+        `Database: ${dbNames[0]}` + (filter ? `   |   Filter: "${filter}"` : '');
+    window.print();
+}
+
 // ── EXPORT EXCEL ─────────────────────────────────────────────────────────────
 function exportXLSX() {
     if (!dbs[0] || !dbs[1]) return;
@@ -989,12 +1133,15 @@ ${sys2Label}`, sColHdrS2);
         col = 2;
         dataCols.forEach(c => {
             const isDiff = diffs.includes(c.id);
-            const v1 = r1 ? (r1[c.id] != null ? r1[c.id] : '--') : '--';
-            const v2 = r2 ? (r2[c.id] != null ? r2[c.id] : '--') : '--';
-            const num1 = (!isNaN(Number(v1)) && v1 !== '--') ? Number(v1) : v1;
-            const num2 = (!isNaN(Number(v2)) && v2 !== '--') ? Number(v2) : v2;
-            setCell(row, col,   num1, isDiff ? sDiff : !r1 ? sAbsent : rowStyle);
-            setCell(row, col+1, num2, isDiff ? sDiff : !r2 ? sAbsent : rowStyle);
+            const raw1 = r1 ? r1[c.id] : null;
+            const raw2 = r2 ? r2[c.id] : null;
+            const isLookup = (c.id === 'TipType' || c.id === 'DispenseMode');
+            const v1 = r1 ? fmtCell(c.id, raw1) : '--';
+            const v2 = r2 ? fmtCell(c.id, raw2) : '--';
+            const num1 = (!isLookup && raw1 != null && !isNaN(Number(raw1))) ? Number(raw1) : v1;
+            const num2 = (!isLookup && raw2 != null && !isNaN(Number(raw2))) ? Number(raw2) : v2;
+            setCell(row, col,   num1 ?? '--', isDiff ? sDiff : !r1 ? sAbsent : rowStyle);
+            setCell(row, col+1, num2 ?? '--', isDiff ? sDiff : !r2 ? sAbsent : rowStyle);
             col += 2;
         });
         row++;
@@ -1050,6 +1197,16 @@ function printReport() {
 
     // Restore state
     if (!wasAuditFocus) { auditFocus = false; render(); }
+}
+
+// ── MODE-AWARE EXPORT / PRINT WRAPPERS ───────────────────────────────────────
+function handleExport() {
+    if (mode === 'explore') exportExploreXLSX();
+    else exportXLSX();
+}
+function handlePrint() {
+    if (mode === 'explore') printExploreReport();
+    else printReport();
 }
 
 // ── NORMALIZE (shared helper) ─────────────────────────────────────────────────

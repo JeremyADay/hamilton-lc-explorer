@@ -22,11 +22,11 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 # ── LOCATE THE TOOL HTML ──────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-HTML_FILE  = os.path.join(SCRIPT_DIR, 'hamilton_lc_v2.html')
+HTML_FILE  = os.path.join(SCRIPT_DIR, 'hamilton_lc_v3.html')
 
 if not os.path.exists(HTML_FILE):
-    print(f"\nERROR: Cannot find hamilton_lc_v2.html in:\n  {SCRIPT_DIR}")
-    print("Make sure launch.py and hamilton_lc_v2.html are in the same folder.")
+    print(f"\nERROR: Cannot find hamilton_lc_v3.html in:\n  {SCRIPT_DIR}")
+    print("Make sure launch.py and hamilton_lc_v3.html are in the same folder.")
     input("\nPress Enter to exit.")
     sys.exit(1)
 
@@ -196,7 +196,7 @@ def main():
 
     # Build URL
     query = urllib.parse.urlencode(params)
-    url = f"http://127.0.0.1:{port}/hamilton_lc_v2.html?{query}"
+    url = f"http://127.0.0.1:{port}/hamilton_lc_v3.html?{query}"
 
     print(f"  Opening browser...")
     webbrowser.open(url)
